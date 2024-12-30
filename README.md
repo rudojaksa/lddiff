@@ -15,9 +15,9 @@ It's a wrapper of `ldd` and `od`.
     white  blacked-out libs with columns missing (`-b` option)
 ```
 
-<a href=doc/sshot2.png><img height=152px src=doc/sshot2.png></a>
-<a href=doc/sshot3.png><img height=152px src=doc/sshot3.png></a>
-<a href=doc/sshot4.png><img height=152px src=doc/sshot4.png></a>
+<a href=doc/sshot2.png><img height=153px src=doc/sshot2.png></a>
+<a href=doc/sshot3.png><img height=153px src=doc/sshot3.png></a>
+<a href=doc/sshot4.png><img height=153px src=doc/sshot4.png></a>
 
 ### Man page
 
