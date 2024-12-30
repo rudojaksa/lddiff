@@ -1,0 +1,580 @@
+#!/usr/bin/perl
+# pcpp generated from pcpp-0.11/pcpp.pl 2024-08-29
+
+# included ".version.pl"
+our $PACKAGE = "pcpp";
+our $VERSION = "0.11";
+our $AUTHOR = "R.Jaksa 2008,2024 GPLv3";
+our $SUBVERSION = "";
+# end ".version.pl"
+
+# included ".pcpp.built.pl"
+our $BUILT = "2024-08-29";
+# end ".pcpp.built.pl"
+
+$HELP=<<EOF;
+
+NAME
+    pcpp - simple Perl/Python/C/C++ preprocessor
+
+USAGE
+    pcpp [OPTIONS] file file ...
+
+DESCRIPTION
+    Simple Perl/Python/C/C++ preprocessor for in-comment directives.
+    * process include directives,
+    * removes triple-comments.
+
+OPTIONS
+     -h  This help.
+     -v  Verbose, CC(-vv) for more verbose.
+ -e DIR  Exclude directory from a search, multiple -e possible.
+    -nt  No triple comments removal.
+    -nw  No watermarking of included parts (by #included).
+    -ni  No indentation propagation.
+
+     -l  List all files to be used, without producing actual output.
+    -ln  Plain list of files to be included, CC(-l1/lp) for level1 or paths.
+ -d TGT  Generate dependencies list for Makefile for the TGT target.
+    -dd  Print a list of dependencies (input file plus included ones).
+
+INCLUDE DIRECTIVE
+    Only lines with the CW("include") directive are recognized.
+    Whitespace after the hash is optional, quotes optional.
+    Whitespace before the hash is used to indent the included content.
+
+    Include files can be defined by the filename, by the path, or by
+    a partial incomplete path.  The path resolving procedure is:
+
+    1. look for direct path from CWD if in top-level file,
+    2. look for relative path from file to which we include,
+    3. look for CWD-relative path,
+    4. find filename recursively in the depth order from CWD,
+    5. strip directory part from include and serch by filename.
+    
+    Double includes are avoided.  Missing includes are ignored.
+    Any text after include files is a comment.
+
+    CW(# include "abc.pl")     # Perl, Python
+    CW(// include "abc.h")     // C, C++
+    CW(#include abc.pl xyz.pl) # multiple files in one include possible
+    CW(## include abc.pl)      # not an include due to two hashes
+    CW(  # include abc.pl)     # indented include of abc.pl
+    CW(# include "abc.pl" # comment)
+    CW(# include abc.pl xyz.pl comment)
+
+TRIPLE COMMENTS
+    Triple comments are removed, together with preceding empty lines.
+    All other comments are propagated to the output.
+
+    CW(### this line will be removed from the Perl/Python code by pcpp)
+    CW(/// this line will be removed from the C/C++ code by pcpp)
+    CW(#### but this will be kept)
+
+EXAMPLES
+    CW(pcpp -v pcpp.pl > pcpp)
+    CW(pcpp -d pcpp pcpp.pl > .pcpp.d)
+
+VERSION
+    $PACKAGE-$VERSION$SUBVERSION CK($AUTHOR) CK(built $BUILT)
+
+EOF
+
+# ------------------------------------------------------------------------------------- ARGV
+
+# included "verbose.pl"
+# verbose (table) cell lengths
+our $L1 = 12;   # L1=file
+our $L2 = 8;	# L2=how
+# end "verbose.pl"
+
+# included "color.pl"
+# color.pl generated from libpl-0.1/src/color.pl 2024-08-27
+{ # TERMINAL COLORS
+
+our $CR_="\033[31m"; # color red
+our $CG_="\033[32m"; # color green
+our $CM_="\033[35m"; # color magenta
+our $CC_="\033[36m"; # color cyan
+our $CW_="\033[37m"; # color white
+our $CK_="\033[90m"; # color black
+our $CD_="\033[0m";  # color default
+
+# return length of string without escape sequences
+our sub esclen {
+  my $s = shift;
+  $s =~ s/\033\[[0-9]+m//g;
+  return length $s; }
+
+} # R.Jaksa 2003,2024 GPLv3
+# end "color.pl"
+
+# included "array.pl"
+# array.pl generated from libpl-0.1/src/array.pl 2024-08-29
+{ # PERL ARRAYS SUPPORT
+
+# inar newgen, returns index+1 instead of simple 0/1
+# inar(\@a,$s) - check whether the string is in the array, return its idx+1 or zero (1st match)
+our sub inar {
+  my $a=$_[0];	# array ref
+  my $s=$_[1];	# string
+  for(my $i=0;$i<=$#{$a};$i++) { return $i+1 if $$a[$i] eq $s; }
+  return 0; }
+
+# clar(\@a,$s) - clear the string in the array (1st match), return its idx+1 or zero
+our sub clar {
+  my $a=$_[0];	# array ref
+  my $s=$_[1];	# string
+  for(my $i=0;$i<=$#{$a};$i++) {
+    if($$a[$i] eq $s) {
+      $$a[$i] = "";
+      return $i+1; }}
+  return 0; }
+
+# pushq(\@a,$s) - string push unique, only if not there
+our sub pushq {
+  my $a=$_[0];	# array ref
+  my $s=$_[1];	# string
+  return if inar $a,$s;
+  push @{$a},$s; }
+
+# inar \@a,$s; checks whether the string $s is in an array @a
+# sub inar { for(@{$_[0]}) { return 1 if $_ eq $_[1] } return 0 }
+
+# delar \@a,$s; removes 1st instance of the string $s from an array @a, i.e. set it to empty ""
+sub delar { for(@{$_[0]}) { $_="" if $_ eq $_[1] }}
+
+# return the length of array without empty "" elements
+sub lenar { my $i=0; for(@{$_[0]}) { $i++ if $_ ne "" } return $i }
+
+} # R.Jaksa 2008,2024 GPLv3
+# end "array.pl"
+
+# included "path.pl"
+# path.pl generated from libpl-0.1/src/path.pl 2024-08-29
+{ # FILESYSTEM PATHS ROUTINES
+
+# return the dirname from the path
+# ccc/aaa/bbb  -> ccc/aaa
+# ccc/aaa/bbb/ -> ccc/aaa
+sub dirname { my $p=$_[0]; $p=~s/\/*$//; $p=~s/\/[^\/]*$//; return $p }
+
+# return file suffix
+sub sx { my $s=$_[0]; $s=~s/^.*\.//; return $s }
+
+# beautify($path,$cwd)
+our sub beautify {
+  my $qcwd = quotemeta $_[1];								# CWD
+  my $p1=$_[1]; $p1=~s/\/*$//; $p1=~s/[^\/]*$//; $p1=~s/\/*$//; my $qp1 = quotemeta $p1;# parent
+  my $p2=$p1; $p2=~s/\/*$//; $p2=~s/[^\/]*$//; $p2=~s/\/*$//; my $qp2 = quotemeta $p2;	# grandparent
+  my $qh = quotemeta $ENV{HOME};							# home
+  my $p = $_[0];
+
+  $p =~ s/^$qcwd\/// if $qcwd;		# /abc/def/ghi -> ghi if cwd=/abc/def
+  $p =~ s/^$qp1\//..\// if $qp1;	# /abc/def/ghi -> ../ghi if cwd=/abc/def/xyz
+  $p =~ s/^$qp2\//..\/..\// if $qp2;	# /abc/def/ghi -> ../../ghi if cwd=/abc/def/xyz/ijk
+  $p =~ s/^$qh\//~\// if $qh;		# /home/abc/xyz -> ~/xyz
+
+  $p =~ s/^\.\///;			# remove the leading "./"
+
+  return $p }
+
+# just remove the leading "./" from the path
+sub undot { my $p=$_[0]; $p=~s/^\.\///; return $p }
+
+} # R.Jaksa 2024 GPLv3
+# end "path.pl"
+
+# included "print.pl"
+# print.pl generated from libpl-0.1/src/print.pl 2024-08-29
+{
+
+# stderr prints, 'e' for error, allows the "grep print" to find it
+our sub eprint  { print  STDERR @_ }
+our sub eprintf { printf STDERR @_ }
+
+}
+# end "print.pl"
+
+# included "printhelp.pl"
+# printhelp.pl generated from helpman-0.3/src/printhelp.pl 2024-08-27
+{ # PRINT A MAN-STYLE HELP
+  # require color.pl
+
+our sub printhelp {
+  my $help = $_[0];
+
+  # we will store parsed text elements in this private hash
+  my %STR;				# private substitutions content strings
+  my $id=0;				# last ID
+
+  # in the text these elements will be repled by this string
+  my ($L,$R) = ("\#\#\>","\<\#\#");	# private left/right brace
+  my sub REP { return "$L$_[0]$R"; }	# return complete private substitution identifier
+
+  # ------------------------------------------------------------------------ PREPROCESSOR
+
+  $help =~ s/(\n\#.*)*\n/\n/g;		# skip commented-out lines
+  $help =~ s/\\\)/REP "brc2"/eg;	# save escaped bracket
+
+  # ------------------------------------------------------------------------------ PARSER
+
+  # CC(text)
+  my $colors = "CWRDKGMB";
+  my $RE1 = qr/(\((([^()]|(?-3))*)\))/x; # () group, $1=withparens, $2=without
+  $STR{$id++}=$4 while $help =~ s/([^A-Z0-9])(C[$colors])$RE1/$1.REP("c$2$id")/e;
+
+  # options lists, like -option ...
+  $STR{$id++}=$2 while $help =~ s/(\n[ ]*)(-[a-zA-Z0-9]+(\[?[ =][A-Z]{2,}(x[A-Z]{2,})?\]?)?)([ \t])/$1.REP("op$id").$5/e;
+
+  # bracketed uppercase words, like [WORD]
+  $STR{$id++}="$1$2" while $help =~ s/\[([+-])?([A-Z]+)\]/REP("br$id")/e;
+
+  # plain uppercase words, like sections headers
+  $STR{$id++}=$2 while $help =~ s/(\n|[ \t])(([A-Z_\/-]+[ ]?){4,})/$1.REP("pl$id")/e;
+
+  # --------------------------------------------------------------------------- PROCESSOR
+
+  # re-substitute
+  $help =~ s/${L}pl([0-9]+)$R/$CC_$STR{$1}$CD_/g;	# plain uppercase words
+  $help =~ s/${L}op([0-9]+)$R/$CC_$STR{$1}$CD_/g;	# options
+  $help =~ s/${L}br([0-9]+)$R/\[$CC_$STR{$1}$CD_\]/g;	# bracketed words
+
+  # CC(text)
+  my %cc; $cc{$_} = ${"C".$_."_"} for split //,$colors;
+  $help =~ s/${L}cC([$colors])([0-9]+)$R/$cc{$1}$STR{$2}$CD_/g;
+
+  # escapes
+  $help =~ s/${L}brc2$R/)/g;
+
+  # ----------------------------------------------------------------------- POSTPROCESSOR
+
+  # star bullets
+  $help =~ s/\n(\h\h+)\* /\n$1$CC_\*$CD_ /g;
+
+  print $help; }
+
+} # R.Jaksa 2015,2019,2024 GPLv3
+# end "printhelp.pl"
+
+for(@ARGV) { if($_ eq "-h")  { printhelp $HELP; exit 0 }}
+for(@ARGV) { if($_ eq "-v")  { $VERBOSE=1; $_=""; last }}
+for(@ARGV) { if($_ eq "-vv") { $VERBOSE=2; $_=""; last }}
+for(@ARGV) { if($_ eq "-nt") { $NOTRIPLE=1; $_=""; last }}
+for(@ARGV) { if($_ eq "-nw") { $NOWATERMARK=1; $_=""; last }}
+for(@ARGV) { if($_ eq "-ni") { $NOIND=1; $_=""; last }}
+for(@ARGV) { if($_ eq "-l")  { $LIST=1; $_=""; last }}
+for(@ARGV) { if($_ eq "-l1") { $LIST=2; $_=""; last }}
+for(@ARGV) { if($_ eq "-lp") { $LIST=3; $_=""; last }}
+for(@ARGV) { if($_ eq "-ln") { $LIST=4; $_=""; last }}
+for(@ARGV) { if($_ eq "-dd") { $DEPS=1; $_=""; last }}
+
+# dependencies-list target
+our $DEPS;
+for(my $i=0;$i<$#ARGV;$i++) {
+  next if $ARGV[$i] ne "-d";
+  $DEPS=$ARGV[$i+1]; $ARGV[$i]=$ARGV[$i+1]="" }
+
+# list of dirs to be excluded
+our @EXCL;
+for(my $i=0;$i<$#ARGV;$i++) {
+  next if $ARGV[$i] ne "-e" or not -d $ARGV[$i+1];
+  push @EXCL,$ARGV[$i+1]; $ARGV[$i]=$ARGV[$i+1]="" }
+
+# prepend "./" if needed
+for(@EXCL) { $_="./$_" if not /^\.\// and not /^\// }
+if($VERBOSE) { eprint "${CK_}# exclude$CD_ $CR_$_$CD_\n" for @EXCL }
+
+# input files
+our @FILES; # list of files to be processed
+for(@ARGV) { push @FILES,$_ if $_ ne "" }
+
+# -------------------------------------------- GET LIST OF DIRS WITH INCLUDABLE PERL/C FILES
+our @DIRS; # recursive list of all local dirs
+our %FF;   # per-directory list of all perl/c files
+our %NF;   # number of files in each dir
+
+# included "mode.pl"
+
+{
+
+# return the file mode by the suffix of filename: pl, py or c
+my sub getbysx {
+  return "pl" if $_[0] eq "pl";
+  return "py" if $_[0] eq "py";
+  return "c"  if $_[0] eq "c++";
+  return "c"  if $_[0] eq "c"; }
+
+# return the mode by the filename, or return the default perl mode
+our sub getmode {
+  my $sx = sx $_[0];
+  my $mode = getbysx $sx;
+     $mode = "pl" if not $mode;
+  return $mode }
+
+# auto-identify the mode of a list of files by the first identifiable
+# file suffix, or return the default perl mode
+our sub firstmode {
+  my $mode;
+  for(@{$_[0]}) {
+    $mode = getbysx sx $_;
+    last if $mode }
+  $mode = "pl" if not $mode;
+  return $mode }
+
+# return the comment identifier string by the mode: # or //
+our sub getsy {
+  return "//" if $_[0] eq "c";
+  return "#" }
+
+} # R.Jaksa 2024 GPLv3
+# end "mode.pl"
+
+our $MODE = firstmode \@FILES;	# input file mode (by 1st file): pl, py or c
+our $SY = getsy $MODE;		# comment identifier
+our $SYQ = quotemeta $SY;
+
+# included "scandirs.pl"
+{ # FIND LIST OF DIRS WITH INCLUDABLE PERL/C FILES
+
+# check if filename is includable pl/py/c file
+# according to the MODE and suffix
+my sub isinc {
+  return 1 if not defined $MODE;
+  return 1 if $MODE eq "pl" and sx($_[0]) eq "pl";
+  return 1 if $MODE eq "py" and sx($_[0]) eq "py";
+  return 1 if $MODE eq "c"  and sx($_[0]) eq "h";
+  return 0 }
+
+# getsubdirs "."; looks for all dirs with .pl/.h files in "."
+# fills-up @DIRS and %FF,%NF
+our sub getsubdirs {
+  my $dir = $_[0];
+  my @all; opendir(DIR,$dir); @all=readdir(DIR); closedir(DIR);
+  my @ff; for(@all) { push @ff,$_ if isinc $_ }		# save .pl/.c filenames
+  if(@ff) { push @DIRS,$dir; $NF{$dir}=@ff; $FF{$dir}=\@ff } # save if nonempty
+  for(@all) {
+    next if /^\./;					# skip hidden dirs
+    my $path = "$dir/$_";
+    next if inar \@EXCL,$path;				# skip excluded dirs
+    getsubdirs($path) if -d $path; }}
+
+# SORT SEARCH DIRS TO PUT BETTER UP
+# 1st compare by number of slashes - to look in current directory first
+# 2nd compare by number of .pl/.c files in dir - just speculative speedup
+my sub subcompare {
+  my $ca = $a=~tr/\///;	# count of / in $a
+  my $cb = $b=~tr/\///; # in $b
+  if   ($ca<$cb) { return -1 }
+  elsif($ca>$cb) { return 1 }
+  else {
+    if   ($NF{$a}>$NF{$b}) { return -1 }
+    elsif($NF{$a}<$NF{$b}) { return 1 }
+  else { return 0 }}}
+
+# re-sort DIRS
+our sub resort {
+  @DIRS=();
+  push @DIRS,$_ for sort subcompare keys %NF }
+
+} # R.Jaksa 2024 GPLv3
+# end "scandirs.pl"
+
+getsubdirs ".";	# fill-up DIRS, FF and NF
+resort();	# re-sort DIRS
+
+if($VERBOSE>1) {
+  my $l = $L1+3;
+  for my $d (@DIRS) {
+    eprintf "$CK_#  search $CG_%-${l}s$CD_",$d;
+    eprint " $CK_$_$CD_" for @{$FF{$d}};
+    eprint "\n" }}
+
+# ------------------------------------------------------------------------- PROCESS INCLUDES
+
+# included "include.pl"
+
+{ # ------------------------------------ RESOLVE INCLUDE DIRECTIVES AND ASSEMBLE FULL OUTPUT
+
+# verbose printout of includes, globals: $L1, $L2, $level, $how
+my sub report {
+  my $path=$_[1];
+  my $c1=$_[0];	# filename color
+     $c1=$CG_ if $c1 eq $CC_ and defined $path and $path eq $file;
+  my $c2=$c1;	# path color
+     $c2=$CG_ if $c1 ne $CK_ and $c1 ne $CM_ and defined $path;
+  my $sp = "  " x ($level-1);
+
+  if($VERBOSE or $LIST==1) {
+    my $p = "include";
+       $p = "   load" if $how eq "direct";
+       $p = "   skip" if $c1 eq $CK_;
+       $p = "missing" if $c1 eq $CR_;
+    my $h = $how;
+       $h = 0 if $how eq "missing" or $how eq "direct";
+    my $s = "$CK_$SY$CD_ $CK_$p$CD_ $sp$c1$file$CD_";
+       $s.= " $CK_$h$CD_" if $h;
+       $s.= " $c2$path$CD_" if defined $path and $path ne $file;
+    eprint "$s\n" }
+
+  if($LIST and $c1 ne $CK_ and $how ne "missing" and $level>=1) {
+    if   ($LIST==3) { print "$sp$path\n" }
+    elsif($LIST==2) { print "$sp$file\n" if $level==1 }
+    elsif($LIST==4) { print "$sp$file\n" }}}
+
+# ------------------------------------------------------------------------------------- MAIN
+our %INCLUDED; # list of already included files (to disable double include) value=level
+# TODO: actually, double include can be useful when including inside blocks!
+
+# line by line add a file to the output, parse #include directives
+our sub addfile {
+  local	 $file=$_[0];
+  my	 $rdir=$_[1]; # current relative subdir
+  local	$level=$_[2]; # recursion level
+  my   $indent=$_[3]; # requested additional indentation space for includes
+  my	   $ok=0;     # 1=alreadyincluded 2=speculativepath 3=filefound
+  my	 $path;	      # full path (to be found)
+  local	  $how;	      # verbose: how was the path found
+
+  $level=0 if not defined $level;		# start level zero
+  $indent="" if not defined $indent;
+  # eprint "$level -> $file ("; eprint "$INCLUDED{$_}:$_ " for keys %INCLUDED; eprint ")\n";
+
+  # look for file in CWD using direct explicit path if no recursion yet
+  if(not $level) {
+    $path = $file;
+    if(defined $INCLUDED{$path}) { $ok=1 } elsif(-f $path) { $ok=3 }
+    $how = "direct" if $ok }
+
+  # look for file using explicit path relative to the parent-file dir
+  if(not $ok) { # not yet found
+    $path = "$rdir/$file";
+    if(defined $INCLUDED{$path}) { $ok=1 } elsif(-f $path) { $ok=3 }
+    $how = "from $rdir" if $ok }
+
+  # look for file using explicit path relative to CWD (inside recursion)
+  if(not $ok) {
+    $path = $file;
+    if(defined $INCLUDED{$path}) { $ok=1 } elsif(-f $path) { $ok=3 }
+    $how = "from cwd" if $ok }
+
+  # look for file recursively (by filename)
+  if(not $ok) {
+    my $fn=$file; $fn=~s/^.*\/// if $fn=~/\//;	# strip the explicit dir
+    my $dir; for(@DIRS) {			# loop through dirs
+      $dir = $_;
+      $path = "$dir/$fn";			# try path relative to every dir
+      $ok=1 and last if defined $INCLUDED{$path}; # already included
+      $ok=3 and last if inar $FF{$dir},$fn }	# found => proceed
+    $how = "found" if $ok;
+
+    # speculative
+    if($ok==3 and $fn ne $file) {		# if file contained dirname
+      my $fd = quotemeta "/".dirname($file);	# directory part of the include name
+      $ok=2 if not $dir =~ /$fd$/ }		# is speculative
+    $how = "guess" if $ok==2 }
+
+  # otherwise missing
+  if(not $ok) {
+    $path = $file;				# orig name, needed for deplist
+    $how = "missing" }
+
+  # verbose/list
+  if   ($ok==1) { report $CK_,beautify($path) }	# redundant, double include
+  elsif($ok==2) { report $CM_,beautify($path) }	# speculative
+  elsif($ok==3) { report $CC_,beautify($path) }	# OK
+  else          { report $CR_,$file }		# not found
+
+  # deps (show also nonexistent files, to allow to be generated)
+  $DEPLIST.=beautify($path)." " if $DEPS;
+
+  return if $ok==0;				# file not found
+  return if $ok==1; # file already included (TODO: accept if requested, but avoid recursion)
+  $INCLUDED{$path} = $level;				# register file
+  $rdir = dirname $path if $ok;	# save for the explicit path lookup in next recursion
+
+  # important: filename regexes
+  my $IN1 = qr/^\h*\"([^\"]+)\"/;		# quoted include
+  my $IN2;					# unquoted include
+     $IN2 = qr/^\h*([\/a-zA-Z0-9\._-]+\.pl)/ if $MODE eq "pl";
+     $IN2 = qr/^\h*([\/a-zA-Z0-9\._-]+\.py)/ if $MODE eq "py";
+     $IN2 = qr/^\h*([\/a-zA-Z0-9\._-]+\.h)/  if $MODE eq "c";
+
+  my @output; # the output line-by-line
+
+  # watermark for new file, at the included-file indentation level
+  if(not $NOWATERMARK and $level) {
+    my $ind=$indent; $ind="" if $NOIND;
+    push @output,"$SY:SEP\n";
+    push @output,"$ind$SY included \"$file\"\n" } # TODO: also comment
+
+  # read cuurent file and recursively resolve include directives
+  for my $line (split /\n/,`cat $path`) {			# <- we read files here!
+    if($line =~ /^(\h*)$SYQ\h*include\h+(.*?)$/) {		# identify include line
+      my $ind=$1; my $s=$2; my $OK=0;      
+      while($s=~s/$IN1// or $s=~s/$IN2//) {			# parse it
+	push @output,addfile($1,$rdir,$level+1,$ind); $OK=1 }	# recurse inside
+      next if $OK }						# go for the next line
+    if($indent and not $NOIND and not $line=~/^\h*$/) { $line="$indent$line" }	# indentation
+    push @output,"$line\n"; }					# <- add regular lines here!
+
+  # watermark footer
+  if(not $NOWATERMARK and$level) {
+    my $ind=$indent; $ind="" if $NOIND;
+    push @output,"$ind$SY end \"$file\"\n";
+    push @output,"$SY:SEP\n" }
+
+  return @output; }
+
+} # ---------------------------------------------------------------- R.Jaksa 2023,2024 GPLv3
+# end "include.pl"
+
+# auxiliary output buffer, as the include recursion would break simple print to stdout,
+# we print to the @output buffer instead, then at the end print it to the stdout
+my @output;
+
+# TODO: header with timestamp and list of inputs
+# TODO: #! interpreter identifier
+
+# for dependencies list
+our $DEPLIST;
+
+# add each argv file to the output
+push @output,addfile($_) for @FILES;
+
+# skip the rest in the list mode
+exit if $LIST;
+
+# print deps
+print "$DEPLIST\n" and exit if $DEPS==1;
+print "$DEPS: $DEPLIST\n" and exit if $DEPS;
+
+# remove tripled comments
+if(not $NOTRIPLE) {
+  for my $i (0..$#output) {
+    if(($MODE eq "c" and $output[$i]=~/^\h*\/\/\/[^\/]/) or $output[$i]=~/^\h*\#\#\#[^\#]/) {
+      $output[$i] = "$SY:DEL $output[$i]";
+      my $j=$i-1; while($j>=0 and $output[$j]=~/^\h*$/) {
+	$output[$j--] = "$SY:DEL\n" }}}}
+
+# multiple :SEP tags
+for my $i (0..$#output-1) {
+  $output[$i]="$SY:DEL\n" if $output[$i]=~/^$SYQ:SEP/ and $output[$i+1]=~/^$SYQ:SEP/ }
+
+# surviving :SEP tags, skip if previous/next line is empty, otherwise add new empty line
+for my $i (0..$#output) {
+  next if not $output[$i] =~ /^$SYQ:SEP/;
+  if($i>0 and $output[$i-1] =~ /^\h*$/) { $output[$i] = "$SY:DEL\n" }
+  elsif($i<$#output and $output[$i+1] =~ /^\h*$/) { $output[$i] = "$SY:DEL\n" }
+  else { $output[$i] = "\n" }}
+
+# :DEL tags and assembly of the final output string
+my $out;
+for my $i (0..$#output) {
+  if($output[$i] =~ /^$SYQ:DEL/) { next }
+  $out .= $output[$i] }
+
+# emit the output
+print $out;
+
+# ------------------------------------------------------------------ R.Jaksa 2000,2024 GPLv3
