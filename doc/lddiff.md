@@ -13,12 +13,12 @@ It is implemented as a wrapper of ldd and od.
       -h  This help.
       -v  Verbose.
      -bw  Black & white.
+      -d  Diff mode: black-out identical names. (not one column)
+     -dw  Diff mode: white if some columns missing.
       -p  Primary libs only.
       -s  Short, strip lib and .so..
      -ng  Don't highlight secondary libs (green).
      -fh  Full header, display directory and filename.
-      -d  Diff mode: black-out identical names. (not one column)
-     -dw  Diff mode: white if some columns missing.
 
 ### COLORS
         red  Missing libs.
@@ -49,5 +49,5 @@ It is implemented as a wrapper of ldd and od.
       od -S 7 $FILE | grep lib | grep -F .so | cut -d ' ' -f 2 | sed 's:^.*/::' | grep '^lib' | sort -u
 
 ### VERSION
-lddiff-0.5a R.Jaksa 2024 GPLv3 built 2025-01-02
+lddiff-0.5 R.Jaksa 2024 GPLv3 built 2025-01-02
 
