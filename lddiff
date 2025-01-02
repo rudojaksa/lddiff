@@ -1,15 +1,15 @@
 #!/usr/bin/perl
-# lddiff generated from lddiff-0.4/lddiff.pl 2024-12-30
+# lddiff generated from lddiff-0.5/lddiff.pl 2025-01-02
 
 # included ".version.pl"
 our $PACKAGE = "lddiff";
-our $VERSION = "0.4";
+our $VERSION = "0.5";
 our $AUTHOR = "R.Jaksa 2024 GPLv3";
-our $SUBVERSION = "";
+our $SUBVERSION = "a";
 # end ".version.pl"
 
 # included ".lddiff.built.pl"
-our $BUILT = "2024-12-30";
+our $BUILT = "2025-01-02";
 # end ".lddiff.built.pl"
 
 our $HELP=<<EOF;
@@ -31,10 +31,10 @@ OPTIONS
    -bw  Black & white.
     -p  Primary libs only.
     -s  Short, strip `lib` and `.so.`.
-    -b  Black-out only rows with all columns present.
-   -nb  Don't black-out identical names.
    -ng  Don't highlight secondary libs (green).
    -fh  Full header, display directory and filename.
+    -d  Diff mode: black-out identical names. (not one column)
+   -dw  Diff mode: white if some columns missing.
 
 COLORS
       CR(red)  Missing libs.
@@ -42,7 +42,7 @@ COLORS
     CG(green)  Libs referenced from libs.
   CM(magenta)  Additional libs not seen by `ldd` but found by `od`.
     CK(black)  Blacked-out libs present in all existing columns.
-    CW(white)  Blacked-out libs with columns missing (`-b` option).
+    CW(white)  Blacked-out libs with columns missing (`-dw` option).
 
 STATISTICS
     The last line CK(")CD(84)CK(-)CG(28)CK(-)CR(13)CK(+)CM(1)CK(") means:
@@ -53,9 +53,9 @@ STATISTICS
    CM(1)  additional one potentially required lib is found by `od`.
 
 EXAMPLES
-    CW(lddiff -v -nb libgtk*)
-    CW(lddiff -s libX*)
+    CW(lddiff -v libgtk*)
     CW(lddiff -bw libgtk* | grep libX)
+    CW(lddiff -s -d libX*)
 
 TRY ALSO
     CW(objdump -p \$FILE | grep NEEDED | sed 's:.* ::' | sort)
@@ -259,9 +259,9 @@ $HELP =~ s:\$PID:$CD_\$PID$CW_:g;
 printhelp $HELP and exit if clar \@ARGV,"-h";
 our $VERBOSE=1	if clar \@ARGV,"-v";
 our $SHORT=1	if clar \@ARGV,"-s";
-our $NOBLACK=1	if clar \@ARGV,"-nb";
 our $NOGREEN=1	if clar \@ARGV,"-ng";
-our $ALLBLACK=1	if clar \@ARGV,"-b";
+our $DIFF=1	if clar \@ARGV,"-d";
+our $DIFW=1	if clar \@ARGV,"-dw";
 our $PRIM=1	if clar \@ARGV,"-p";
 our $FULLHDR=1	if clar \@ARGV,"-fh";
 our $BW=1	if clar \@ARGV,"-bw";
@@ -585,11 +585,12 @@ my sub prldd {
      @v = @{$V{$b}[$i]} if defined $i;
   my $m = $#FILES+1;
   my $c = $CD_;
-     if(not $NOBLACK) {
-       if($ALLBLACK and $NL{$l}==$m) { $c = $CK_ } # all versions equal and nonempty
-       elsif($#v<1 and $m>1) {			   # only one version in a row
-	 if($ALLBLACK) { $c = $CW_ }
-	 else	    { $c = $CK_ }}}
+     if($DIFF or $DIFW) {
+       if($DIFW and $NL{$l}==$m) { $c = $CK_ } # all versions equal and nonempty
+       elsif($#v<1 and $m>1) {		       # only one version in a row
+	 if($DIFW) { $c = $CW_ }
+	 elsif($NL{$l}==1)   {}
+	 else	   { $c = $CK_ }}}
      $c = $CG_ if not $PRI{$f}{$l} and not $NOGREEN;
      $c = $CR_ if $NOF{$f}{$l}==1;
      $c = $CM_ if $NOL{$f}{$l};

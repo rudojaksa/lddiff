@@ -12,7 +12,7 @@ It's a wrapper of `ldd` and `od`.
     green  libs referenced from libs
   magenta  additional libs not seen by `ldd` but found by `od`
     black  blacked-out libs present in all existing columns  
-    white  blacked-out libs with columns missing (`-b` option)
+    white  blacked-out libs with columns missing (`-dw` option)
 ```
 
 <a href=doc/sshot2.png><img height=152px src=doc/sshot2.png></a>

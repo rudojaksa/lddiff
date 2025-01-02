@@ -15,10 +15,10 @@ It is implemented as a wrapper of ldd and od.
      -bw  Black & white.
       -p  Primary libs only.
       -s  Short, strip lib and .so..
-      -b  Black-out only rows with all columns present.
-     -nb  Don't black-out identical names.
      -ng  Don't highlight secondary libs (green).
      -fh  Full header, display directory and filename.
+      -d  Diff mode: black-out identical names. (not one column)
+     -dw  Diff mode: white if some columns missing.
 
 ### COLORS
         red  Missing libs.
@@ -26,7 +26,7 @@ It is implemented as a wrapper of ldd and od.
       green  Libs referenced from libs.
     magenta  Additional libs not seen by ldd but found by od.
       black  Blacked-out libs present in all existing columns.
-      white  Blacked-out libs with columns missing (-b option).
+      white  Blacked-out libs with columns missing (-dw option).
 
 ### STATISTICS
       The last line "84-28-13+1" means:
@@ -37,9 +37,9 @@ It is implemented as a wrapper of ldd and od.
      1  additional one potentially required lib is found by od.
 
 ### EXAMPLES
-      lddiff -v -nb libgtk*
-      lddiff -s libX*
+      lddiff -v libgtk*
       lddiff -bw libgtk* | grep libX
+      lddiff -s -d libX*
 
 ### TRY ALSO
       objdump -p $FILE | grep NEEDED | sed 's:.* ::' | sort
@@ -49,5 +49,5 @@ It is implemented as a wrapper of ldd and od.
       od -S 7 $FILE | grep lib | grep -F .so | cut -d ' ' -f 2 | sed 's:^.*/::' | grep '^lib' | sort -u
 
 ### VERSION
-lddiff-0.4 R.Jaksa 2024 GPLv3 built 2024-12-30
+lddiff-0.5a R.Jaksa 2024 GPLv3 built 2025-01-02
 
