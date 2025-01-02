@@ -1,7 +1,7 @@
 PACKAGE	:= lddiff
 VERSION	:= 0.5
 AUTHORS	:= R.Jaksa 2024 GPLv3
-SUBVERS	:= a
+SUBVERS	:= 
 
 SHELL	:= /bin/bash
 PATH	:= usr/bin:$(PATH)
