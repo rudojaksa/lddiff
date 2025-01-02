@@ -17,12 +17,12 @@ OPTIONS
     -h  This help.
     -v  Verbose.
    -bw  Black & white.
+    -d  Diff mode: black-out identical names. (not one column)
+   -dw  Diff mode: white if some columns missing.
     -p  Primary libs only.
     -s  Short, strip `lib` and `.so.`.
    -ng  Don't highlight secondary libs (green).
    -fh  Full header, display directory and filename.
-    -d  Diff mode: black-out identical names. (not one column)
-   -dw  Diff mode: white if some columns missing.
 
 COLORS
       CR(red)  Missing libs.
